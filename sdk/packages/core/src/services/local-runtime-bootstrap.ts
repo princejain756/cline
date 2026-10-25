@@ -438,6 +438,7 @@ export async function prepareLocalRuntimeBootstrap(
 				rootSessionId: sessionId,
 				logger: localConfig?.logger,
 				workspaceInfo,
+				isResume: input.resumed === true,
 				// Detached hooks are never awaited, so their runtime is
 				// invisible today. Measuring it is what tells us whether
 				// run-start hooks could safely become blocking.

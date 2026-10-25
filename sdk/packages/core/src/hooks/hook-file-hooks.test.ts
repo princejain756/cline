@@ -461,6 +461,39 @@ describe("createHookConfigFileHooks", () => {
 		}
 	});
 
+	it("dispatches agent_resume instead of agent_start for a resumed session (#14961)", async () => {
+		// The resume signal must come from the session start request, not
+		// process.env: in a shared hub daemon the environment describes the
+		// client that spawned the daemon, not the session being started.
+		const { workspace } = await createWorkspaceWithHook(
+			"TaskResume.js",
+			`console.log('HOOK_CONTROL\\t' + JSON.stringify({ cancel: true, errorMessage: "resumed hook ran" }))\n`,
+		);
+		try {
+			const hooks = createHookConfigFileHooks({
+				cwd: workspace,
+				workspacePath: workspace,
+				detachAsyncHooks: false,
+				blockingRunStartHooks: true,
+				isResume: true,
+			});
+			const result = await hooks?.beforeRun?.({
+				snapshot: beforeToolContext().snapshot,
+			});
+			expect(result).toEqual({
+				stop: true,
+				reason: "resumed hook ran",
+			});
+		} finally {
+			await rm(workspace, {
+				recursive: true,
+				force: true,
+				maxRetries: 3,
+				retryDelay: 250,
+			});
+		}
+	});
+
 	it("does not inject context when the hook cancels", async () => {
 		const { workspace } = await createWorkspaceWithHook(
 			"PreToolUse.js",

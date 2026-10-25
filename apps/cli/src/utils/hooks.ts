@@ -168,6 +168,9 @@ export function createRuntimeHooks(options: {
 	yolo?: boolean;
 	cwd?: string;
 	workspaceRoot?: string;
+	/** Whether the session was resumed — read per run so agent_start and
+	 * agent_resume stay correct across restarts in one runtime (#14961). */
+	isResumed?: () => boolean;
 	dispatchHookEvent: (payload: HookEventPayload) => Promise<void>;
 }): {
 	hooks?: AgentHooks;
@@ -191,7 +194,7 @@ export function createRuntimeHooks(options: {
 					cwd,
 					workspaceRoot,
 				});
-				const isResume = process.env.CLINE_HOOK_AGENT_RESUME === "1";
+				const isResume = options.isResumed?.() === true;
 				await dispatchHookPayload(
 					isResume
 						? {

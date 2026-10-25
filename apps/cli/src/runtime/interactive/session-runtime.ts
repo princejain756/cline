@@ -132,6 +132,10 @@ export function createInteractiveSessionRuntime(input: {
 	let manualCompactionAbortController: AbortController | undefined;
 
 	let pendingResumeSessionId = input.resumeSessionId?.trim() || undefined;
+	// Whether the active session was opened by resuming a previous one. Run-start
+	// hooks read this per session instead of process.env so a hub daemon started
+	// by an unrelated client reports the right hook (#14961).
+	let sessionIsResumed = false;
 
 	const clearActiveSession = (): void => {
 		activeSessionId = "";
@@ -194,6 +198,7 @@ export function createInteractiveSessionRuntime(input: {
 			yolo: input.config.mode === "yolo",
 			cwd: input.config.cwd,
 			workspaceRoot: input.config.workspaceRoot,
+			isResumed: () => sessionIsResumed,
 			dispatchHookEvent: async (payload) => {
 				await manager.ingestHookEvent(payload);
 			},
@@ -247,6 +252,10 @@ export function createInteractiveSessionRuntime(input: {
 	): Promise<void> => {
 		const generation = sessionStartGeneration;
 		const manager = await ensureSessionManager();
+		// A fresh start that carries a sessionId continues an existing session
+		// (e.g. restart after a config change) and counts as a resume for
+		// run-start hooks.
+		sessionIsResumed = sessionId !== undefined;
 		const started = await manager.start({
 			source: SessionSource.CLI,
 			config: {
@@ -255,6 +264,7 @@ export function createInteractiveSessionRuntime(input: {
 			},
 			toolPolicies: input.config.toolPolicies,
 			interactive: true,
+			...(sessionId ? { resumed: true } : {}),
 			initialMessages: initial,
 			...(initialCompactionState ? { initialCompactionState } : {}),
 			...(sessionMetadata ? { sessionMetadata } : {}),
@@ -275,6 +285,7 @@ export function createInteractiveSessionRuntime(input: {
 	): Promise<void> => {
 		const generation = sessionStartGeneration;
 		const manager = await ensureSessionManager();
+		sessionIsResumed = true;
 		const started = await manager.start({
 			source: SessionSource.CLI,
 			config: {
@@ -283,6 +294,7 @@ export function createInteractiveSessionRuntime(input: {
 			},
 			toolPolicies: input.config.toolPolicies,
 			interactive: true,
+			resumed: true,
 			initialMessages: initial,
 			localRuntime: {
 				onTeamRestored: () => {},

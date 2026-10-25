@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Config } from "../utils/types";
 import {
 	applyInteractiveModelChange,
@@ -128,25 +128,12 @@ describe("applyInteractiveModelChange", () => {
 });
 
 describe("resumeInteractiveSession", () => {
-	const originalAgentResume = process.env.CLINE_HOOK_AGENT_RESUME;
-
-	afterEach(() => {
-		if (originalAgentResume === undefined) {
-			delete process.env.CLINE_HOOK_AGENT_RESUME;
-		} else {
-			process.env.CLINE_HOOK_AGENT_RESUME = originalAgentResume;
-		}
-	});
-
 	it("starts the selected session directly without ensuring an empty session first", async () => {
 		const messages = [
 			{ id: "message-1", role: "user" as const, content: "hello" },
 		];
 		const ensureReady = vi.fn(async () => {});
-		const resumeSession = vi.fn(async () => {
-			expect(process.env.CLINE_HOOK_AGENT_RESUME).toBe("1");
-			return messages;
-		});
+		const resumeSession = vi.fn(async () => messages);
 		const getAccumulatedUsage = vi.fn(async () => ({
 			inputTokens: 12,
 			outputTokens: 3,
@@ -174,13 +161,10 @@ describe("resumeInteractiveSession", () => {
 			messages,
 			totalCost: 0.42,
 		});
-		expect(process.env.CLINE_HOOK_AGENT_RESUME).toBe("1");
 	});
 
-	it("restores the hook state when the selected session cannot resume", async () => {
-		delete process.env.CLINE_HOOK_AGENT_RESUME;
+	it("propagates the error when the selected session cannot resume", async () => {
 		const resumeSession = vi.fn(async () => {
-			expect(process.env.CLINE_HOOK_AGENT_RESUME).toBe("1");
 			throw new Error("resume failed");
 		});
 
@@ -193,7 +177,5 @@ describe("resumeInteractiveSession", () => {
 				"session-missing",
 			),
 		).rejects.toThrow("resume failed");
-
-		expect(process.env.CLINE_HOOK_AGENT_RESUME).toBeUndefined();
 	});
 });

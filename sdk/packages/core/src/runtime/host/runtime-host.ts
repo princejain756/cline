@@ -163,6 +163,16 @@ export interface StartSessionInput {
 	mode?: string;
 	prompt?: string;
 	interactive?: boolean;
+	/**
+	 * True when this start call continues an existing session (e.g. the CLI's
+	 * --id resume or history resume), as opposed to opening a new one.
+	 * Run-start hooks need this per session: previously they read
+	 * CLINE_HOOK_AGENT_RESUME from process.env, which is a property of the
+	 * process that spawned the runtime host, not of the session, so a shared
+	 * hub daemon reported every session as whatever its parent happened to be
+	 * (#14961).
+	 */
+	resumed?: boolean;
 	sessionMetadata?: Record<string, unknown>;
 	initialMessages?: LlmsProviders.MessageWithMetadata[];
 	initialCompactionState?: SessionCompactionState;

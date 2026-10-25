@@ -408,6 +408,7 @@ export async function handleSessionCreate(
 		initialMessages: Array.isArray(payload.initialMessages)
 			? (payload.initialMessages as never[])
 			: undefined,
+		resumed: payload.resumed === true,
 		initialCompactionState,
 		localRuntime: {
 			modelCatalogDefaults: {

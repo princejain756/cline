@@ -113,6 +113,14 @@ type HookRuntimeOptions = {
 	onHookRuntime?: HookRuntimeObserver;
 	/** Structured git + path metadata forwarded into every hook payload. */
 	workspaceInfo?: WorkspaceInfo;
+	/**
+	 * Whether the session this runtime serves was resumed, deciding between
+	 * agent_start and agent_resume at run start. Must come from the session
+	 * start request, never process.env — in a shared hub daemon process the
+	 * environment describes the client that spawned the daemon, not this
+	 * session (#14961).
+	 */
+	isResume?: boolean;
 };
 
 function mapParams(input: unknown): Record<string, string> {
@@ -997,9 +1005,7 @@ export function createHookConfigFileHooks(
 		) {
 			hooks.beforeRun = async (ctx: AgentRunLifecycleContext) => {
 				const hookName =
-					process.env.CLINE_HOOK_AGENT_RESUME === "1"
-						? "agent_resume"
-						: "agent_start";
+					options.isResume === true ? "agent_resume" : "agent_start";
 				const control = await runAgentStart(
 					baseContextFromSnapshot(ctx.snapshot),
 					hookName,

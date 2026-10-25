@@ -753,6 +753,7 @@ export class AcpAgent implements Agent {
 				sessionId: acpSessionId,
 			},
 			interactive: true,
+			...(options?.resume === true ? { resumed: true } : {}),
 			initialMessages,
 		});
 

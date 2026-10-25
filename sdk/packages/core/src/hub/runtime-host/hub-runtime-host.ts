@@ -924,6 +924,7 @@ export class HubRuntimeHost implements RuntimeHost {
 						}
 					: {}),
 				initialMessages: input.initialMessages,
+				...(input.resumed === true ? { resumed: true } : {}),
 				...(input.initialCompactionState
 					? { initialCompactionState: input.initialCompactionState }
 					: {}),

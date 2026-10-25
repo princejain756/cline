@@ -1283,6 +1283,7 @@ async function startRebuiltSession(
 		),
 		source: SessionSource.DESKTOP,
 		interactive: true,
+		resumed: true,
 		initialMessages: messages,
 		...(projectedMessages
 			? {

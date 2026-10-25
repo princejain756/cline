@@ -734,9 +734,6 @@ export async function runCli(): Promise<void> {
 		}
 		resumeSessionId = sessionId;
 		startupTarget = "chat";
-		process.env.CLINE_HOOK_AGENT_RESUME = "1";
-	} else {
-		delete process.env.CLINE_HOOK_AGENT_RESUME;
 	}
 	if (startupTarget) {
 		args = {
