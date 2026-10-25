@@ -12,6 +12,8 @@ import { getUserRunSpan } from "./user-run-messages";
 
 const execFile = promisify(execFileCallback);
 
+const MAX_GIT_LISTING_BUFFER = 1024 * 1024 * 64;
+
 export interface CheckpointRestorePlan {
 	checkpoint: CheckpointEntry;
 	messages?: LlmsProviders.MessageWithMetadata[];
@@ -40,12 +42,122 @@ async function resolveOptionalGitRef(
 }
 
 /**
+ * Untracked worktree paths visible under the ignore rules in effect right
+ * now (`git ls-files --others --exclude-standard`).
+ */
+async function listUntrackedWorktreePaths(cwd: string): Promise<string[]> {
+	const listing = await execFile(
+		"git",
+		["-C", cwd, "ls-files", "--others", "--exclude-standard", "-z"],
+		{ windowsHide: true, maxBuffer: MAX_GIT_LISTING_BUFFER },
+	);
+	return listing.stdout.split("\0").filter(Boolean);
+}
+
+/**
+ * Untracked paths the current ignore rules exclude. This must be captured
+ * BEFORE `git stash push --include-untracked` or `git reset --hard` run:
+ * the stash carries an untracked .gitignore away and the reset reverts a
+ * modified one, so afterwards previously-ignored paths look like ordinary
+ * untracked files and a blanket `git clean` would delete them (the #15023
+ * data loss). The snapshot taken here keeps protecting them.
+ */
+async function listIgnoredWorktreePaths(cwd: string): Promise<Set<string>> {
+	try {
+		const listing = await execFile(
+			"git",
+			[
+				"-C",
+				cwd,
+				"ls-files",
+				"--others",
+				"--ignored",
+				"--exclude-standard",
+				"-z",
+			],
+			{ windowsHide: true, maxBuffer: MAX_GIT_LISTING_BUFFER },
+		);
+		return new Set(listing.stdout.split("\0").filter(Boolean));
+	} catch {
+		return new Set();
+	}
+}
+
+/**
+ * Paths a stash captured as untracked files (its third parent — the commit
+ * `createWorktreeStashCommit` or `git stash push --include-untracked`
+ * records). `git stash apply` rewrites exactly this set, so it is also the
+ * complete set restore-time cleanup may touch. Two-parent stashes and
+ * HEAD-commit checkpoints capture nothing and yield an empty list.
+ */
+async function listStashUntrackedPaths(
+	cwd: string,
+	ref: string,
+): Promise<string[]> {
+	try {
+		const listing = await execFile(
+			"git",
+			["-C", cwd, "ls-tree", "-r", "-z", "--name-only", `${ref}^3`],
+			{ windowsHide: true, maxBuffer: MAX_GIT_LISTING_BUFFER },
+		);
+		return listing.stdout.split("\0").filter(Boolean);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Deletes `paths` from the worktree, batching the pathspec so large file
+ * sets stay well under command-line limits. `-x` is safe here ONLY because
+ * the pathspec is already an explicit allowlist (paths the restore itself
+ * captured or verified as deletable) — it covers captured paths that have
+ * since become .gitignored and would otherwise collide with `stash apply`.
+ * Never call this with a blanket pathspec: `git clean` without an explicit
+ * list deletes every untracked file the current ignore rules miss, and
+ * mid-restore those rules may be the wrong ones.
+ */
+async function cleanWorktreePaths(
+	cwd: string,
+	paths: readonly string[],
+): Promise<void> {
+	for (let index = 0; index < paths.length; index += 200) {
+		await execFile(
+			"git",
+			[
+				"-C",
+				cwd,
+				"--literal-pathspecs",
+				"clean",
+				"-fdx",
+				"--",
+				...paths.slice(index, index + 200),
+			],
+			{ windowsHide: true },
+		);
+	}
+}
+
+/**
+ * Untracked paths that may be deleted without losing user data: everything
+ * untracked under the CURRENT rules, minus the paths that were ignored
+ * before the transaction disturbed the ignore files.
+ */
+async function listDeletableUntrackedPaths(
+	cwd: string,
+	previouslyIgnored: ReadonlySet<string>,
+): Promise<string[]> {
+	const untracked = await listUntrackedWorktreePaths(cwd);
+	return untracked.filter((path) => !previouslyIgnored.has(path));
+}
+
+/**
  * Captures the current worktree before a destructive checkpoint restore.
  *
- * `git stash create` omits untracked files, but checkpoint restoration runs
- * `git clean -fd`. Use a short-lived `stash push --include-untracked`, move
- * its object behind a private ref, and immediately remove it from the user's
- * visible stash list. The private ref remains only until commit or rollback.
+ * `git stash create` omits untracked files, but checkpoint restoration clears
+ * captured paths from the worktree before applying them. Use a short-lived
+ * `stash push --include-untracked`, move its object behind a private ref,
+ * and immediately remove it from the user's visible stash list. The private
+ * ref remains only until commit or rollback.
  */
 export async function beginWorktreeRestoreTransaction(
 	cwd: string,
@@ -64,6 +176,9 @@ export async function beginWorktreeRestoreTransaction(
 		})
 	).stdout.trim();
 	const previousStashRef = await resolveOptionalGitRef(cwd, "refs/stash");
+	// Snapshot while the worktree's own ignore rules are still in effect —
+	// the stash below can carry an untracked .gitignore away with it.
+	const previouslyIgnored = await listIgnoredWorktreePaths(cwd);
 	const transactionId = randomUUID();
 	const privateRef = `refs/cline/restore-transactions/${transactionId}`;
 
@@ -99,9 +214,10 @@ export async function beginWorktreeRestoreTransaction(
 				await execFile("git", ["-C", cwd, "reset", "--hard", originalHead], {
 					windowsHide: true,
 				});
-				await execFile("git", ["-C", cwd, "clean", "-fd"], {
-					windowsHide: true,
-				});
+				await cleanWorktreePaths(
+					cwd,
+					await listDeletableUntrackedPaths(cwd, previouslyIgnored),
+				);
 				await execFile(
 					"git",
 					["-C", cwd, "stash", "apply", "--index", capturedRef],
@@ -135,9 +251,10 @@ export async function beginWorktreeRestoreTransaction(
 			await execFile("git", ["-C", cwd, "reset", "--hard", originalHead], {
 				windowsHide: true,
 			});
-			await execFile("git", ["-C", cwd, "clean", "-fd"], {
-				windowsHide: true,
-			});
+			await cleanWorktreePaths(
+				cwd,
+				await listDeletableUntrackedPaths(cwd, previouslyIgnored),
+			);
 			if (hasSnapshot) {
 				await execFile(
 					"git",
@@ -334,26 +451,6 @@ async function resolveCheckpointKind(
 		: "commit";
 }
 
-/**
- * True when `ref` is a snapshot stash that also captured untracked files as a
- * third parent (created by `createWorktreeStashCommit`). Such snapshots can be
- * fully rewound; older 2-parent stashes and HEAD-commit fallbacks cannot bring
- * untracked files back, so restore leaves untracked files untouched for them.
- */
-async function checkpointCapturedUntracked(
-	cwd: string,
-	ref: string,
-): Promise<boolean> {
-	try {
-		await execFile("git", ["-C", cwd, "cat-file", "-e", `${ref}^3^{commit}`], {
-			windowsHide: true,
-		});
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 /** Commits reachable from `to` but not from `from`; undefined when unknown. */
 async function countCommitsBetween(
 	cwd: string,
@@ -432,7 +529,7 @@ export async function applyCheckpointToWorktree(
 			{ windowsHide: true },
 		);
 	}
-	const capturedUntracked = await checkpointCapturedUntracked(
+	const capturedUntrackedPaths = await listStashUntrackedPaths(
 		cwd,
 		checkpoint.ref,
 	);
@@ -458,16 +555,21 @@ export async function applyCheckpointToWorktree(
 	await execFile("git", ["-C", cwd, "reset", "--hard"], {
 		windowsHide: true,
 	});
-	// Only clear untracked files for snapshots that captured them (third
-	// parent): the following `git stash apply` restores each one to its
-	// checkpoint-time content from ^3, and files created after the checkpoint
-	// are meant to be rewound away. `git clean -fd` leaves .gitignored paths
-	// (build output, node_modules, .env) alone, and clearing before apply also
-	// avoids "already exists" apply conflicts. For 2-parent stashes and
-	// HEAD-commit fallbacks (no ^3) untracked files can't be reconstructed, so
-	// they are left untouched — deleting them would be unrecoverable data loss.
-	if (capturedUntracked) {
-		await execFile("git", ["-C", cwd, "clean", "-fd"], { windowsHide: true });
+	// Clear exactly the paths the snapshot captured as untracked (its third
+	// parent): the following `git stash apply` rewrites each of them to
+	// checkpoint-time content, so whatever now sits at those paths — including
+	// paths that became .gitignored after the checkpoint — must move out of
+	// the way first or the apply fails. Nothing outside the captured set is
+	// touched: a blanket `git clean -fd` is unsafe here because restore-time
+	// ignore rules are not the user's real ones (the restore transaction can
+	// carry an untracked .gitignore away, and `reset --hard` reverts a
+	// modified one), which is how ignored folders were deleted as "untracked"
+	// in #15023. Work created after the checkpoint belongs to the restore
+	// transaction, which snapshots it before this function runs. For
+	// 2-parent stashes and HEAD-commit fallbacks (no ^3) there is nothing to
+	// reconstruct, so nothing is deleted.
+	if (capturedUntrackedPaths.length > 0) {
+		await cleanWorktreePaths(cwd, capturedUntrackedPaths);
 	}
 	if (checkpointKind === "commit") {
 		return;

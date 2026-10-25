@@ -208,7 +208,7 @@ describe("applyCheckpointToWorktree", () => {
 		expect(git(dir, ["rev-parse", "HEAD"])).toBe(amendedHead);
 	});
 
-	it("fully rewinds a snapshot checkpoint: untracked reverted, created-after removed, no apply conflict", async () => {
+	it("fully rewinds a snapshot checkpoint: untracked reverted, no apply conflict, nothing else touched", async () => {
 		// State captured by the checkpoint: a tracked edit plus an untracked
 		// file at "v2".
 		writeFileSync(join(dir, "tracked.txt"), "checkpoint\n", "utf8");
@@ -230,8 +230,13 @@ describe("applyCheckpointToWorktree", () => {
 		// Untracked file modified after the checkpoint is reverted to its
 		// checkpoint-time content (from the ^3 parent), not left at "v3".
 		expect(readFileSync(join(dir, "untracked.md"), "utf8")).toBe("v2\n");
-		// A file created after the checkpoint is rewound away.
-		expect(existsSync(join(dir, "created-after.txt"))).toBe(false);
+		// A file created after the checkpoint is user work the checkpoint
+		// never captured; apply only touches the captured pathspec (#15023).
+		// In the real flow the restore transaction snapshots post-checkpoint
+		// work before apply runs.
+		expect(readFileSync(join(dir, "created-after.txt"), "utf8")).toBe(
+			"made later\n",
+		);
 	});
 
 	it("keeps .gitignored files when rewinding a snapshot checkpoint", async () => {
@@ -253,6 +258,84 @@ describe("applyCheckpointToWorktree", () => {
 		expect(readFileSync(join(dir, "ignored.log"), "utf8")).toBe(
 			"build output\n",
 		);
+	});
+
+	it("preserves an ignored folder when the untracked .gitignore is stashed mid-restore (#15023)", async () => {
+		// The reported data-loss shape: .gitignore itself is untracked, so the
+		// restore transaction's `stash push -u` carries it away and `reset
+		// --hard` leaves the worktree with no ignore rules at all. A blanket
+		// `git clean -fd` then sees the ignored folder as plain untracked and
+		// deletes it permanently. Restore must only touch captured paths.
+		writeFileSync(join(dir, ".gitignore"), "textures_sorted/\n", "utf8");
+		writeFileSync(join(dir, "tracked.txt"), "checkpoint\n", "utf8");
+		writeFileSync(join(dir, "untracked.md"), "captured\n", "utf8");
+		mkdirSync(join(dir, "textures_sorted", "original"), { recursive: true });
+		writeFileSync(
+			join(dir, "textures_sorted", "original", "source.bin"),
+			"irreplaceable\n",
+			"utf8",
+		);
+		const checkpoint = await snapshotCurrentWorktree(dir);
+
+		writeFileSync(join(dir, "tracked.txt"), "later\n", "utf8");
+		writeFileSync(
+			join(dir, "textures_sorted", "original", "more.bin"),
+			"added after\n",
+			"utf8",
+		);
+
+		const transaction = await beginWorktreeRestoreTransaction(dir);
+		// Sanity: the stash really did remove .gitignore, so ignore rules are
+		// absent when apply cleans — the exact conditions that ate user data.
+		expect(existsSync(join(dir, ".gitignore"))).toBe(false);
+		await applyCheckpointToWorktree(dir, checkpoint);
+		await transaction.commit();
+
+		expect(readFileSync(join(dir, "tracked.txt"), "utf8")).toBe("checkpoint\n");
+		expect(readFileSync(join(dir, "untracked.md"), "utf8")).toBe("captured\n");
+		expect(
+			readFileSync(
+				join(dir, "textures_sorted", "original", "source.bin"),
+				"utf8",
+			),
+		).toBe("irreplaceable\n");
+		expect(
+			readFileSync(
+				join(dir, "textures_sorted", "original", "more.bin"),
+				"utf8",
+			),
+		).toBe("added after\n");
+	});
+
+	it("preserves an ignored folder when reset --hard reverts a modified .gitignore", async () => {
+		// Same loss shape with a tracked .gitignore: the rule exists only in
+		// the uncommitted worktree version, so `reset --hard` wipes it before
+		// cleanup ever runs.
+		writeFileSync(join(dir, ".gitignore"), "dist/\n", "utf8");
+		git(dir, ["add", ".gitignore"]);
+		git(dir, ["commit", "-m", "gitignore without textures entry"]);
+		writeFileSync(join(dir, ".gitignore"), "dist/\ntextures_sorted/\n", "utf8");
+		writeFileSync(join(dir, "tracked.txt"), "checkpoint\n", "utf8");
+		mkdirSync(join(dir, "textures_sorted", "original"), { recursive: true });
+		writeFileSync(
+			join(dir, "textures_sorted", "original", "source.bin"),
+			"irreplaceable\n",
+			"utf8",
+		);
+		const checkpoint = await snapshotCurrentWorktree(dir);
+
+		writeFileSync(join(dir, "tracked.txt"), "later\n", "utf8");
+
+		const transaction = await beginWorktreeRestoreTransaction(dir);
+		await applyCheckpointToWorktree(dir, checkpoint);
+		await transaction.rollback();
+
+		expect(
+			readFileSync(
+				join(dir, "textures_sorted", "original", "source.bin"),
+				"utf8",
+			),
+		).toBe("irreplaceable\n");
 	});
 
 	it("infers a kindless stash checkpoint without treating it as a commit", async () => {
