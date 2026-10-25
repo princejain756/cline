@@ -770,6 +770,7 @@ export class AcpAgent implements Agent {
 		const systemPrompt = await resolveSystemPrompt({
 			cwd,
 			providerId,
+			modelId: session.currentModelId,
 			mode: session.currentMode,
 		});
 		const cliBuildInfo = getCliBuildInfo();

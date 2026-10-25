@@ -15,6 +15,7 @@ export async function resolveSystemPrompt(input: {
 	cwd: string;
 	explicitSystemPrompt?: string;
 	providerId?: string;
+	modelId?: string;
 	rules?: string;
 	mode?: AgentMode;
 }): Promise<string> {
@@ -31,6 +32,7 @@ export async function resolveSystemPrompt(input: {
 		rules,
 		mode: input.mode,
 		providerId: input.providerId,
+		modelId: input.modelId,
 		overridePrompt: input.explicitSystemPrompt,
 		platform:
 			(typeof process !== "undefined" && process?.platform) || "unknown",

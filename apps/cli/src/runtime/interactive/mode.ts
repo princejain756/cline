@@ -126,6 +126,7 @@ export async function applyInteractiveModeConfig(input: {
 	input.config.systemPrompt = await resolveSystemPrompt({
 		cwd: input.config.cwd,
 		providerId: input.config.providerId,
+		modelId: input.config.modelId,
 		mode: input.mode,
 	});
 }

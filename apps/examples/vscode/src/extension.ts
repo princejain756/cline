@@ -1165,6 +1165,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 			session.provider,
 			explicitSystemPrompt,
 			mode,
+			session.model,
 		);
 		return {
 			workspaceRoot: session.workspaceRoot,
@@ -1216,6 +1217,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 			providerId,
 			config?.systemPrompt,
 			mode,
+			modelId,
 		);
 		const startConfig: StartConfig = {
 			workspaceRoot: defaults.workspaceRoot,
@@ -1298,6 +1300,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 		providerId: string,
 		explicitSystemPrompt?: string,
 		mode: "act" | "plan" | "yolo" = "act",
+		modelId?: string,
 	): Promise<string> {
 		const metadata = await buildWorkspaceMetadata(cwd);
 		return buildClineSystemPrompt({
@@ -1306,6 +1309,7 @@ class CoreChatWebviewController implements vscode.Disposable {
 			mode,
 			workspaceRoot: cwd,
 			providerId,
+			modelId,
 			workspaceName: basename(cwd),
 			metadata,
 			platform:

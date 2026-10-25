@@ -655,6 +655,7 @@ export async function handleConnectorUserTurn<
 					cwd: next.cwd,
 					explicitSystemPrompt: input.explicitSystemPrompt,
 					providerId: input.baseStartRequest.provider,
+					modelId: input.baseStartRequest.model,
 					rules: input.systemRules,
 				});
 				const nextState = {

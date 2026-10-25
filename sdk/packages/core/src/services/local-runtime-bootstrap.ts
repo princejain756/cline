@@ -181,6 +181,7 @@ function resolveBootstrapSystemPrompt(
 		rules: config.rules,
 		mode: config.mode,
 		providerId: config.providerId,
+		modelId: config.modelId,
 		platform: process.platform || "unknown",
 	});
 }

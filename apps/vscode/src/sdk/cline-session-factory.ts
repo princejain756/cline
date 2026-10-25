@@ -1084,6 +1084,7 @@ export async function buildSessionConfig(input: SessionConfigInput): Promise<Cor
 			metadata: workspaceMetadata,
 			mode: mode === "plan" ? "plan" : "act",
 			providerId,
+			modelId,
 			platform: input.runtime?.platform ?? process.platform,
 			// The extension never exposes switch_to_act_mode (unlike the CLI):
 			// matching the legacy extension, the user must flip the Plan/Act

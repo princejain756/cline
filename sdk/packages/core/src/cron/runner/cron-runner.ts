@@ -691,6 +691,7 @@ export class CronRunner {
 			rules: spec.systemPrompt ? undefined : additional,
 			mode,
 			providerId: provider,
+			modelId: spec.modelId,
 			overridePrompt: spec.systemPrompt,
 			platform:
 				(typeof process !== "undefined" && process?.platform) || "unknown",

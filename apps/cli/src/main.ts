@@ -1053,20 +1053,22 @@ export async function runCli(): Promise<void> {
 			cwd,
 		});
 
+		const modelId =
+			args.model ??
+			selectedProviderSettings?.model ??
+			providerDefaultModelId ??
+			knownModelIds[0] ??
+			CLINE_DEFAULT_MODEL_ID;
 		const config: Config = {
 			providerId: provider,
-			modelId:
-				args.model ??
-				selectedProviderSettings?.model ??
-				providerDefaultModelId ??
-				knownModelIds[0] ??
-				CLINE_DEFAULT_MODEL_ID,
+			modelId,
 			apiKey: apiKey ?? "",
 			knownModels,
 			systemPrompt: await resolveSystemPrompt({
 				cwd,
 				explicitSystemPrompt: args.systemPrompt,
 				providerId: provider,
+				modelId,
 				mode: effectiveMode,
 			}),
 			execution: {

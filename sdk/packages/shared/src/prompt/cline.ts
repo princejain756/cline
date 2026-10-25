@@ -140,6 +140,13 @@ export interface ClineSystemPromptOptions
 	/** Provider ID — used to gate Cline-specific metadata injection */
 	providerId?: string;
 	/**
+	 * Active model ID — injected into the <env> block together with the
+	 * provider so non-Anthropic models know what they are running as and do
+	 * not fall back to their training-data identity (e.g. claiming to be
+	 * Claude).
+	 */
+	modelId?: string;
+	/**
 	 * Whether the host exposes the switch_to_act_mode tool in plan mode.
 	 * Defaults to true (CLI behavior). Hosts that require the user to flip the
 	 * Plan/Act toggle themselves (the VS Code extension) set this to false so
@@ -161,6 +168,7 @@ export function buildClineSystemPrompt(
 		rules,
 		overridePrompt,
 		providerId,
+		modelId,
 		planModeSwitchTool = true,
 	} = options;
 	const workspaceRoot = options.workspaceRoot ?? options.rootPath ?? "";
@@ -197,11 +205,25 @@ export function buildClineSystemPrompt(
 		.filter(Boolean)
 		.join("\n\n");
 
+	// Numbered <env> lines after the fixed 1-4 items, emitted only for the
+	// values the caller actually knows.
+	const envExtraLines = [
+		modelId?.trim() ? `Model: ${modelId.trim()}` : undefined,
+		providerId?.trim() ? `Provider: ${providerId.trim()}` : undefined,
+	]
+		.filter((line): line is string => Boolean(line))
+		.map((line, index) => `${5 + index}. ${line}`)
+		.join("\n");
+
 	return basePrompt
 		.replace("{{PLATFORM_NAME}}", platform)
 		.replace("{{CWD}}", workspaceRoot)
 		.replace("{{CURRENT_DATE}}", new Date().toLocaleDateString())
 		.replace("{{IDE_NAME}}", ide)
+		.replace(
+			"{{ENV_MODEL_LINES}}",
+			envExtraLines ? `${envExtraLines}\n` : "",
+		)
 		.replace(
 			"{{CLINE_METADATA}}",
 			isCline

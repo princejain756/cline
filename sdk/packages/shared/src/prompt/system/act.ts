@@ -10,7 +10,7 @@ Environment you are running in:
 2. Date: {{CURRENT_DATE}}
 3. IDE: {{IDE_NAME}}
 4. Working Directory: {{CWD}}
-</env>
+{{ENV_MODEL_LINES}}</env>
 
 Remember:
 - Always adhere to existing code conventions and patterns.

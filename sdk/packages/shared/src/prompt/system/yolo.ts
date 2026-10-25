@@ -23,7 +23,7 @@ Environment you are running in:
 2. Date: {{CURRENT_DATE}}
 3. IDE: {{IDE_NAME}}
 4. Working Directory: {{CWD}}
-</env>
+{{ENV_MODEL_LINES}}</env>
 
 IMPORTANT:
 - When the user describes a bug, unexpected behavior, or provides a bug report, your primary goal is to produce a correct fix in the source code that resolves the issue.

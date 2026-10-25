@@ -46,6 +46,24 @@ describe("buildClineSystemPrompt mode instructions", () => {
 		expect(prompt).not.toContain(PLAN_MODE_INSTRUCTIONS);
 	});
 
+	it("lists the active model and provider in the env block", () => {
+		const prompt = buildClineSystemPrompt({
+			...BASE_OPTIONS,
+			mode: "act",
+			providerId: "openai-compatible",
+			modelId: "vendor/some-model",
+		});
+		expect(prompt).toContain(
+			"4. Working Directory: /workspace/project\n5. Model: vendor/some-model\n6. Provider: openai-compatible\n</env>",
+		);
+	});
+
+	it("omits the model env lines when no model is given", () => {
+		const prompt = buildClineSystemPrompt({ ...BASE_OPTIONS, mode: "act" });
+		expect(prompt).toContain("4. Working Directory: /workspace/project\n</env>");
+		expect(prompt).not.toContain("Model:");
+	});
+
 	it("appends the plan-mode contract only in plan mode", () => {
 		const prompt = buildClineSystemPrompt({ ...BASE_OPTIONS, mode: "plan" });
 		expect(prompt).toContain(MODE_TAG_INSTRUCTIONS);

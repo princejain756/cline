@@ -877,6 +877,8 @@ async function resolveSystemPrompt(config: JsonRecord): Promise<string> {
 		rules: inlineRules,
 		mode,
 		providerId: providerId || undefined,
+		modelId:
+			String(config.model ?? config.modelId ?? "").trim() || undefined,
 		overridePrompt:
 			typeof config.systemPrompt === "string" &&
 			config.systemPrompt.trim().length > 0
